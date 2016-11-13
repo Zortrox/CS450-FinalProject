@@ -86,6 +86,7 @@ public class Client extends NetObject{
 		//clear screen for message displaying
 		clearMessages();
 
+
 		//keep trying to connect to server
 		while(!bServerFound && !threadQuit)
 		{
