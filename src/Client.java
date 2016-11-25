@@ -34,9 +34,11 @@ public class Client extends NetObject{
 		topPanel.add(btnAddress, BorderLayout.EAST);
 		frame.getContentPane().add(topPanel, BorderLayout.NORTH);
 
-		btnAddress.addActionListener(new ActionListener() {
+		Action actionURL = new AbstractAction()
+		{
 			@Override
-			public void actionPerformed(ActionEvent e) {
+			public void actionPerformed(ActionEvent e)
+			{
 				try {
 					if (threadConnection != null) {
 						threadQuit = true;
@@ -63,7 +65,10 @@ public class Client extends NetObject{
 					ex.printStackTrace();
 				}
 			}
-		});
+		};
+
+		btnAddress.addActionListener(actionURL);
+		textAddress.addActionListener(actionURL);
 
 		kit = new HTMLEditorKit();
 		textArea = new JEditorPane();
@@ -86,6 +91,25 @@ public class Client extends NetObject{
 		//clear screen for message displaying
 		clearMessages();
 
+		//connect to DNS
+		DatagramSocket clientSocket = new DatagramSocket();
+		Message msgDNS = new Message();
+		msgDNS.mData = mIP.getBytes();
+		msgDNS.mIP = InetAddress.getByName("127.0.0.1");
+		msgDNS.mPort = 4567;
+		sendUDPData(clientSocket, msgDNS);
+		receiveUDPData(clientSocket, msgDNS);
+
+		String strData = new String(msgDNS.mData).trim();
+		String code = strData.substring(0, strData.indexOf('='));
+
+		if (code.equals("IP")) {
+			mIP = strData.substring(strData.indexOf('=') + 1, strData.indexOf(':'));
+			mPort = Integer.parseInt(strData.substring(strData.indexOf(':') + 1));
+		} else {
+			writeMessage(strData.substring(strData.indexOf('=') + 1));
+			threadQuit = true;
+		}
 
 		//keep trying to connect to server
 		while(!bServerFound && !threadQuit)
@@ -137,7 +161,8 @@ public class Client extends NetObject{
 		kit.createDefaultDocument();
 		textArea.setEditorKit(kit);
 		textArea.setText(msg);
-		scrollPane.scrollRectToVisible(textArea.getBounds());
+		//scroll back to top
+		textArea.setCaretPosition(0);
 	}
 
 	public void clearMessages() {

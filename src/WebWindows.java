@@ -10,7 +10,8 @@ public class WebWindows {
 		String IP = "127.0.0.1";
 		int port = 80;
 
-		//DNSServer dns = new DNSServer(IP, port);
+		DNSServer dns = new DNSServer(IP, 4567);
+		dns.start();
 		WebServer web = new WebServer(IP, port);
 		web.start();
 		Client client = new Client();

@@ -7,27 +7,28 @@ import javax.swing.text.DefaultCaret;
 import java.awt.Dimension;
 import java.io.*;
 import java.net.*;
+import java.nio.ByteBuffer;
 import java.nio.file.*;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.*;
 
 public class DNSServer extends NetObject{
 
-	private BlockingQueue<Socket> qSockets = new LinkedBlockingQueue<>();
-	private Thread tSockets;
+	private BlockingQueue<DatagramPacket> qPackets = new LinkedBlockingQueue<>();
+	private Thread tPackets;
+
+	HashMap<String, String> tableIP = new HashMap<>();
 
 	DNSServer(String IP, int port) {
 		mIP = IP;
 		mPort = port;
 
-		//delete logs to overwrite
-		File folder = new File("server-saves");
-		File[] files = folder.listFiles();
-		for(File f: files) {
-			f.delete();
-		}
+		//ADD TEMPORARY SERVER
+		tableIP.put("www.abc.com", "127.0.0.1:80");
 
-		JFrame frame = new JFrame("Server");
+		JFrame frame = new JFrame("DNS Server");
 		frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
 		frame.setSize(new Dimension(300, 200));
 
@@ -47,55 +48,80 @@ public class DNSServer extends NetObject{
 
 	public void run() {
 		try {
-			TCPConnection();
+			UDPConnection();
 		} catch (Exception ex) {
 			ex.printStackTrace();
 		}
 	}
 
-	private void TCPConnection() throws Exception{
-		//queue up new requests
-		tSockets = new Thread(new Runnable() {
+	private void UDPConnection() throws Exception{
+		DatagramSocket serverSocket = new DatagramSocket(mPort);
+
+		//queue packets
+		tPackets = new Thread(new Runnable() {
 			@Override
 			public void run() {
 				try {
-					writeMessage("[listening for connections]");
-
-					ServerSocket serverSocket = new ServerSocket(mPort);
+					writeMessage("[Listening for packets]");
 
 					while (true) {
-						Socket newSocket = serverSocket.accept();
-						qSockets.put(newSocket);
+						byte[] receiveData = new byte[PACKET_SIZE];
+						DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+						serverSocket.receive(receivePacket);
+
+						qPackets.put(receivePacket);
 					}
 				} catch (Exception ex) {
 					ex.printStackTrace();
 				}
 			}
 		});
-		tSockets.start();
+		tPackets.start();
 
-		//process requests
-		while (true)
-		{
-			Socket clientSocket = qSockets.take();
-			writeMessage("[new connection]");
-
+		while(true) {
+			//receive data
+			DatagramPacket receivePacket = qPackets.take();
+			writeMessage("[New Packet]");
 			Message msg = new Message();
-			receiveTCPData(clientSocket, msg);
-			String recMsg = new String(msg.mData);
-			String name = recMsg.substring(0, recMsg.indexOf('='));
-			recMsg = recMsg.substring(recMsg.indexOf('=') + 1);
-			writeMessage("<" + name + ">: " + recMsg);
+			//process packet into the message
+			processUDPData(receivePacket, msg);
 
-			//save data
-			if (!serverSaveData(name, recMsg)) {
-				writeMessage("[old data from " + name + "]");
+			//get domain name
+			String domain = new String(msg.mData);
+			domain = domain.trim();
+
+			//get IP from domain
+			String IP = tableIP.get(domain);
+			if (IP == null) {
+				//trim "www" if there
+				int indexDot = domain.indexOf('.');
+				if (indexDot >= 0) {
+					String sub = domain.substring(0, indexDot);
+					if (sub.equals("www")) {
+						IP = tableIP.get(domain.substring(domain.indexOf('.')));
+					} else {
+						IP = tableIP.get("www." + domain);
+					}
+				}
 			}
 
-			String sndMsg = "Received: " + recMsg;
-			msg.mData = sndMsg.getBytes();
-			sendTCPData(clientSocket, msg);
+			String sendMsg;
+			if (IP != null) {
+				sendMsg = "IP=" + IP;
+				writeMessage("[" + domain + " -> " + IP + "]");
+			} else {
+				sendMsg = "error=no IP found";
+				writeMessage("[" + domain + " not found]");
+			}
+			msg.mData = sendMsg.getBytes();
+			sendUDPData(serverSocket, msg);
 		}
+	}
+
+	private void processUDPData(DatagramPacket receivePacket, Message msg) {
+		msg.mData = receivePacket.getData();
+		msg.mIP = receivePacket.getAddress();
+		msg.mPort = receivePacket.getPort();
 	}
 
 	private boolean serverSaveData(String name, String data) {
@@ -122,5 +148,4 @@ public class DNSServer extends NetObject{
 
 		return true;
 	}
-
 }
