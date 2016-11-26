@@ -95,8 +95,8 @@ public class Client extends NetObject{
 		DatagramSocket clientSocket = new DatagramSocket();
 		Message msgDNS = new Message();
 		msgDNS.mData = mIP.getBytes();
-		msgDNS.mIP = InetAddress.getByName("127.0.0.1");
-		msgDNS.mPort = 4567;
+		msgDNS.mIP = InetAddress.getByName(mSettings.get("dns_ip"));
+		msgDNS.mPort = Integer.valueOf(mSettings.get("dns_port"));
 		sendUDPData(clientSocket, msgDNS);
 		receiveUDPData(clientSocket, msgDNS);
 

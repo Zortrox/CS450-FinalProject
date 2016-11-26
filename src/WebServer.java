@@ -16,9 +16,9 @@ public class WebServer extends NetObject{
 	private BlockingQueue<Socket> qSockets = new LinkedBlockingQueue<>();
 	private Thread tSockets;
 
-	WebServer(String IP, int port) {
-		mIP = IP;
-		mPort = port;
+	WebServer() {
+		mIP = mSettings.get("ip");
+		mPort = Integer.valueOf(mSettings.get("port"));
 
 		JFrame frame = new JFrame("Server");
 		frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
@@ -47,6 +47,28 @@ public class WebServer extends NetObject{
 	}
 
 	private void TCPConnection() throws Exception{
+		//add self to DNS
+		DatagramSocket dnsSocket = new DatagramSocket();
+		String serverID = "new=www.gecko.com>" + mIP + ":" + mPort;
+
+		Message msgDNS = new Message();
+		msgDNS.mData = serverID.getBytes();
+		msgDNS.mIP = InetAddress.getByName(mSettings.get("dns_ip"));
+		msgDNS.mPort = Integer.valueOf(mSettings.get("dns_port"));
+		sendUDPData(dnsSocket, msgDNS);
+		receiveUDPData(dnsSocket, msgDNS);
+
+		String strData = new String(msgDNS.mData).trim();
+		String code = strData.substring(0, strData.indexOf('='));
+
+		if (code.equals("success")) {
+			//mIP = strData.substring(strData.indexOf('=') + 1, strData.indexOf(':'));
+			//mPort = Integer.parseInt(strData.substring(strData.indexOf(':') + 1));
+		} else {
+			writeMessage(strData.substring(strData.indexOf('=') + 1));
+			//threadQuit = true;
+		}
+
 		//queue up new requests
 		tSockets = new Thread(new Runnable() {
 			@Override

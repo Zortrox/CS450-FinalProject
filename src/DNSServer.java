@@ -21,9 +21,9 @@ public class DNSServer extends NetObject{
 
 	HashMap<String, String> tableIP = new HashMap<>();
 
-	DNSServer(String IP, int port) {
-		mIP = IP;
-		mPort = port;
+	DNSServer() {
+		mIP = mSettings.get("ip");
+		mPort = Integer.valueOf(mSettings.get("dns_port"));
 
 		//ADD TEMPORARY SERVER
 		tableIP.put("www.abc.com", "127.0.0.1:80");
@@ -89,29 +89,43 @@ public class DNSServer extends NetObject{
 			//get domain name
 			String domain = new String(msg.mData);
 			domain = domain.trim();
-
-			//get IP from domain
-			String IP = tableIP.get(domain);
-			if (IP == null) {
-				//trim "www" if there
-				int indexDot = domain.indexOf('.');
-				if (indexDot >= 0) {
-					String sub = domain.substring(0, indexDot);
-					if (sub.equals("www")) {
-						IP = tableIP.get(domain.substring(domain.indexOf('.')));
-					} else {
-						IP = tableIP.get("www." + domain);
-					}
-				}
-			}
+			int eqIndex = domain.indexOf('=');
 
 			String sendMsg;
-			if (IP != null) {
-				sendMsg = "IP=" + IP;
-				writeMessage("[" + domain + " -> " + IP + "]");
+			if (eqIndex  > -1 && domain.substring(0, eqIndex).equals("new")) {
+				String IP = domain.substring(domain.indexOf('>') + 1);
+				domain = domain.substring(eqIndex + 1, domain.indexOf('>'));
+
+				//add domain name & IP to map
+				tableIP.put(domain, IP);
+
+				writeMessage("New Site: " + domain + " -> " + IP);
+
+				sendMsg = "success=true";
+				sendUDPData(serverSocket, msg);
 			} else {
-				sendMsg = "error=no IP found";
-				writeMessage("[" + domain + " not found]");
+				//get IP from domain
+				String IP = tableIP.get(domain);
+				if (IP == null) {
+					//trim "www" if there
+					int indexDot = domain.indexOf('.');
+					if (indexDot >= 0) {
+						String sub = domain.substring(0, indexDot);
+						if (sub.equals("www")) {
+							IP = tableIP.get(domain.substring(domain.indexOf('.')));
+						} else {
+							IP = tableIP.get("www." + domain);
+						}
+					}
+				}
+
+				if (IP != null) {
+					sendMsg = "IP=" + IP;
+					writeMessage("[" + domain + " -> " + IP + "]");
+				} else {
+					sendMsg = "error=no IP found";
+					writeMessage("[" + domain + " not found]");
+				}
 			}
 			msg.mData = sendMsg.getBytes();
 			sendUDPData(serverSocket, msg);

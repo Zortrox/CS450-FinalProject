@@ -6,7 +6,9 @@ import javax.swing.*;
 import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
+import java.nio.charset.Charset;
+import java.nio.file.*;
+import java.util.*;
 
 class Message {
 	byte[] mData;
@@ -21,6 +23,8 @@ public class NetObject extends Thread{
 
 	String mIP = "";
 	int mPort = 0;
+
+	Map<String, String> mSettings = readSettingsFile();
 
 	protected static final int PACKET_SIZE = 64;
 
@@ -79,6 +83,30 @@ public class NetObject extends Thread{
 
 	public void clearMessages() {
 		textArea.setText("");
+	}
+
+	public Map<String, String> readSettingsFile() {
+		Map<String, String> settings = new HashMap<>();
+
+		try {
+			Path path = FileSystems.getDefault().getPath(".", "settings.ini");
+			List<String> lines = Files.readAllLines(path, Charset.defaultCharset());
+
+			for (int i=0; i < lines.size(); i++) {
+				String line = lines.get(i).trim();
+
+				if (!line.equals("") || line.charAt(0) != '#') {
+					String setting = line.substring(0, line.indexOf('=')).trim();
+					String value = line.substring(line.indexOf('=') + 1).trim();
+
+					settings.put(setting, value);
+				}
+			}
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+
+		return settings;
 	}
 }
 
