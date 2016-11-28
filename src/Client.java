@@ -7,11 +7,14 @@ import javax.swing.text.DefaultCaret;
 import javax.swing.text.Document;
 import javax.swing.text.html.HTMLEditorKit;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+import java.awt.event.*;
 import java.net.*;
+import java.nio.file.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.regex.*;
 
-public class Client extends NetObject{
+public class Client extends NetObject {
 
 	private JTextField textAddress;
 	private JEditorPane textArea;
@@ -20,6 +23,10 @@ public class Client extends NetObject{
 
 	private Thread threadConnection = null;
 	private volatile boolean threadQuit = false;
+
+	public static void main(String[] args) {
+		new Client();
+	}
 
 	Client() {
 		JFrame frame = new JFrame("Client");
@@ -135,7 +142,7 @@ public class Client extends NetObject{
 
 		if (!threadQuit) {
 			//initialize message
-			String msgSend = "file=sample.htm";
+			String msgSend = "file=index.htm";
 
 			Message msg = new Message();
 			msg.mData = msgSend.getBytes();
@@ -147,11 +154,47 @@ public class Client extends NetObject{
 			msgReceive = msgReceive.substring(msgReceive.indexOf('=') + 1);
 
 			if (type.equals("file")) {
+				String htmlText = msgReceive;
+
+				//download all files
+				ArrayList<String> allFilenames = new ArrayList<String>();
+				Matcher m = Pattern.compile("(?<=src=\").*?(?=\")")
+						.matcher(msgReceive);
+				while (m.find()) {
+					allFilenames.add(m.group());
+				}
+				for (int i = 0; i < allFilenames.size(); i++) {
+					msg.mData = ("file=" + allFilenames.get(i)).getBytes();
+					sendTCPData(socket, msg);
+					receiveTCPData(socket, msg);
+
+					String filename = allFilenames.get(i);
+					int lastIndex = filename.lastIndexOf('/');
+					filename = filename.substring(lastIndex + 1);
+
+					msgReceive = new String(msg.mData);
+					type = msgReceive.substring(0, msgReceive.indexOf('='));
+					msgReceive = msgReceive.substring(msgReceive.indexOf('=') + 1);
+
+					if (type.equals("file")) {
+						Path file = Paths.get("temp/" + filename);
+						Files.write(file, Arrays.copyOfRange(msg.mData, 5, msg.mData.length));
+					}
+				}
+
+				//write html to file
 				clearMessages();
-				writeMessage(msgReceive);
+				writeMessage(htmlText);
 			} else if (type.equals("error")) {
 				writeMessage(msgReceive);
+			} else if (type.equals("close")) {
+				//close the connection and stop
+				socket.close();
+				return;
 			}
+
+			msg.mData = "close=true".getBytes();
+			sendTCPData(socket, msg);
 
 			socket.close();
 		}
@@ -160,6 +203,7 @@ public class Client extends NetObject{
 	public void writeMessage(String msg) {
 		kit.createDefaultDocument();
 		textArea.setEditorKit(kit);
+		msg = msg.replaceAll("(src=\")", "$1file:temp/");
 		textArea.setText(msg);
 		//scroll back to top
 		textArea.setCaretPosition(0);

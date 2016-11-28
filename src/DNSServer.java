@@ -14,16 +14,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.*;
 
-public class DNSServer extends NetObject{
+public class DNSServer extends NetObject {
 
 	private BlockingQueue<DatagramPacket> qPackets = new LinkedBlockingQueue<>();
 	private Thread tPackets;
 
 	HashMap<String, String> tableIP = new HashMap<>();
 
+	public static void main(String[] args) {
+		(new DNSServer()).start();
+	}
+
 	DNSServer() {
 		mIP = mSettings.get("ip");
-		mPort = Integer.valueOf(mSettings.get("dns_port"));
+		mPort = Integer.valueOf(mSettings.get("port"));
 
 		//ADD TEMPORARY SERVER
 		tableIP.put("www.abc.com", "127.0.0.1:80");
@@ -102,6 +106,7 @@ public class DNSServer extends NetObject{
 				writeMessage("New Site: " + domain + " -> " + IP);
 
 				sendMsg = "success=true";
+				msg.mData = sendMsg.getBytes();
 				sendUDPData(serverSocket, msg);
 			} else {
 				//get IP from domain

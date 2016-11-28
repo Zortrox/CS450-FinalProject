@@ -8,13 +8,18 @@ import java.awt.Dimension;
 import java.io.*;
 import java.net.*;
 import java.nio.file.*;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.*;
 
-public class WebServer extends NetObject{
+public class WebServer extends NetObject {
 
 	private BlockingQueue<Socket> qSockets = new LinkedBlockingQueue<>();
 	private Thread tSockets;
+
+	public static void main(String[] args) {
+		(new WebServer()).start();
+	}
 
 	WebServer() {
 		mIP = mSettings.get("ip");
@@ -47,28 +52,6 @@ public class WebServer extends NetObject{
 	}
 
 	private void TCPConnection() throws Exception{
-		//add self to DNS
-		DatagramSocket dnsSocket = new DatagramSocket();
-		String serverID = "new=www.gecko.com>" + mIP + ":" + mPort;
-
-		Message msgDNS = new Message();
-		msgDNS.mData = serverID.getBytes();
-		msgDNS.mIP = InetAddress.getByName(mSettings.get("dns_ip"));
-		msgDNS.mPort = Integer.valueOf(mSettings.get("dns_port"));
-		sendUDPData(dnsSocket, msgDNS);
-		receiveUDPData(dnsSocket, msgDNS);
-
-		String strData = new String(msgDNS.mData).trim();
-		String code = strData.substring(0, strData.indexOf('='));
-
-		if (code.equals("success")) {
-			//mIP = strData.substring(strData.indexOf('=') + 1, strData.indexOf(':'));
-			//mPort = Integer.parseInt(strData.substring(strData.indexOf(':') + 1));
-		} else {
-			writeMessage(strData.substring(strData.indexOf('=') + 1));
-			//threadQuit = true;
-		}
-
 		//queue up new requests
 		tSockets = new Thread(new Runnable() {
 			@Override
@@ -89,46 +72,98 @@ public class WebServer extends NetObject{
 		});
 		tSockets.start();
 
-		//process requests
+		//add self to DNS
+		DatagramSocket dnsSocket = new DatagramSocket();
+		String serverID = "new=" + mSettings.get("domain") + ">" + mIP + ":" + mPort;
+
+		Message msgDNS = new Message();
+		msgDNS.mData = serverID.getBytes();
+		msgDNS.mIP = InetAddress.getByName(mSettings.get("dns_ip"));
+		msgDNS.mPort = Integer.valueOf(mSettings.get("dns_port"));
+		sendUDPData(dnsSocket, msgDNS);
+		receiveUDPData(dnsSocket, msgDNS);
+
+		String strData = new String(msgDNS.mData).trim();
+		String code = strData.substring(0, strData.indexOf('='));
+
+		if (code.equals("success")) {
+			writeMessage("[connected to DNS]");
+
+			//process requests (4 threads)
+			Runnable runConnection = new Runnable() {
+				@Override
+				public void run() {
+					try {
+						processConnection();
+					} catch (Exception ex) {
+						ex.printStackTrace();
+					}
+				}
+			};
+
+			Thread thrConnection1 = new Thread(runConnection);
+			thrConnection1.start();
+			Thread thrConnection2 = new Thread(runConnection);
+			thrConnection2.start();
+			Thread thrConnection3 = new Thread(runConnection);
+			thrConnection3.start();
+			Thread thrConnection4 = new Thread(runConnection);
+			thrConnection4.start();
+		} else {
+			writeMessage("Error: Could not connect to DNS");
+		}
+	}
+
+	private void processConnection() throws Exception {
 		while (true)
 		{
 			Socket clientSocket = qSockets.take();
 			writeMessage("[new connection]");
 
 			Message msg = new Message();
-			receiveTCPData(clientSocket, msg);
-			String recMsg = new String(msg.mData);
-			String type = recMsg.substring(0, recMsg.indexOf('='));
-			recMsg = recMsg.substring(recMsg.indexOf('=') + 1);
+			boolean bClosed = false;
+			do {
+				receiveTCPData(clientSocket, msg);
+				String recMsg = new String(msg.mData);
+				String type = recMsg.substring(0, recMsg.indexOf('='));
+				recMsg = recMsg.substring(recMsg.indexOf('=') + 1);
 
-			if (type.equals("file")) {
-				writeMessage("Sending file: " + recMsg);
-				String sndMsg = serverReadFile(recMsg);
-				msg.mData = sndMsg.getBytes();
-				sendTCPData(clientSocket, msg);
-			} else {
-				String sndMsg = "error=unknown protocol";
-				msg.mData = sndMsg.getBytes();
-				sendTCPData(clientSocket, msg);
+
+				if (type.equals("close")) {
+					//close the connection
+					bClosed = true;
+				} else if (qSockets.size() > 4) {
+					//DROP CONNECTION WHEN BUFFER SIZE LARGE
+					writeMessage("[Too many connections: closing]");
+					msg.mData = "close: too many connections".getBytes();
+					sendTCPData(clientSocket, msg);
+					bClosed = true;
+				} else if (type.equals("file")) {
+					writeMessage("Sending file: " + recMsg);
+					msg.mData = serverReadFile(recMsg);
+					sendTCPData(clientSocket, msg);
+				} else {
+					String sndMsg = "error=unknown protocol";
+					msg.mData = sndMsg.getBytes();
+					sendTCPData(clientSocket, msg);
+				}
 			}
-
+			while (!bClosed);
 		}
 	}
 
-	private String serverReadFile(String filename) {
+	private byte[] serverReadFile(String filename) {
 		Path file = Paths.get("server-content/" + filename);
-		String data = "file=";
+		byte[] data;
 
 		try {
-			List lines = Files.readAllLines(file);
-
-			for (int i = 0; i < lines.size(); i++) {
-				data += lines.get(i) + "\n";
-			}
+			byte[] fileData = Files.readAllBytes(file);
+			data = Arrays.copyOf("file=".getBytes(), fileData.length + 5);
+			System.arraycopy(fileData, 0, data, 5, fileData.length);
 		} catch (Exception ex) {
 			//ex.printStackTrace();
 			writeMessage("File does not exist: " + filename);
-			return "error=404: file not found";
+			return "error=404: file not found".getBytes();
 		}
 
 		return data;
